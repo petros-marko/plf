@@ -417,7 +417,8 @@ Lemma typing_example_2 :
   empty |-- (\a : ( i1 : (A -> A) :: i2 : (B -> B) :: nil), a --> i2)
             ( i1 := (\a : A, a) :: i2 := (\a : B,a ) :: nil )  \in (B -> B).
 Proof.
-  (* FILL IN HERE *) Admitted.
+  repeat econstructor.
+  Qed.
 
 Example typing_nonexample :
   ~ exists T,
@@ -425,7 +426,9 @@ Example typing_nonexample :
        ( i1 := (\a : B, a) :: a ) \in
                T.
 Proof.
-  (* FILL IN HERE *) Admitted.
+  unfold not. intros [T H].
+  inversion H; inversion H7; subst.
+  Qed.
 
 Example typing_nonexample_2 : forall y,
   ~ exists T,
@@ -433,7 +436,11 @@ Example typing_nonexample_2 : forall y,
      (\a : ( i1 : A  :: nil ), a --> i1 )
       ( i1 := y :: i2 := y :: nil )  \in T.
 Proof.
-  (* FILL IN HERE *) Admitted.
+  unfold not. intros. destruct H. rename x into T.
+  inversion H. inversion H2. inversion H4.
+  inversion H16; subst.
+  inversion H17; subst.
+  Qed.
 (** [] *)
 
 (* ================================================================= *)
