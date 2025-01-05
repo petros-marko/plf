@@ -457,9 +457,23 @@ Notation "t1 ; t2" := (tseq t1 t2) (in custom stlc at level 3).
     execution where the first two [let]s have finished and the third
     one is about to begin. *)
 
-(* FILL IN HERE
+(**
+   ---        ------
+  | 1 | <--- | c1.i | 
+   ---        ------
+    ^
+    |         ------
+     ------- | c1.d |
+              ------
 
-    [] *)
+   ---        ------
+  | 0 | <--- | c2.i |
+   ---        ------
+    ^
+    |         ------
+     ------- | c2.d |
+              ------
+*)
 
 (* ================================================================= *)
 (** ** References to Compound Types *)
@@ -520,7 +534,13 @@ Notation "t1 ; t2" := (tseq t1 t2) (in custom stlc at level 3).
 
 would it behave the same? *)
 
-(* FILL IN HERE *)
+(** 
+    It should behave the same. The let operation just gives a name to the value, 
+    but in both cases (!a) is evaluated before a is assigned new contents.
+    If dereferencing a could cause a fault, then there would be a difference because
+    in the short version we only dereference if equal m n = false, but that should not
+    happen.    
+*)
 
 (* Do not modify the following line: *)
 Definition manual_grade_for_compact_update : option (nat*string) := None.
@@ -577,7 +597,13 @@ Definition manual_grade_for_compact_update : option (nat*string) := None.
 
     Show how this can lead to a violation of type safety. *)
 
-(* FILL IN HERE *)
+(** 
+  Imagine the following program (where dealloc is the explicit deallocation operation):
+  let ri = ref 0 in
+  dealloc r ;
+  let rb = ref true in // assume rb refers to the same cell as ri
+  if0 !ri then 5 else 10 // this will get stuck since !ri contains a boolean value (true) even though ri has type Ref Nat.
+*)
 
 (* Do not modify the following line: *)
 Definition manual_grade_for_type_safety_violation : option (nat*string) := None.
@@ -1057,7 +1083,65 @@ Theorem cyclic_store:
     t / nil -->*
     <{ unit }> / (<{ \x:Nat, (!(loc 1)) x }> :: <{ \x:Nat, (!(loc 0)) x }> :: nil).
 Proof.
-  (* FILL IN HERE *) Admitted.
+  exists <{
+    (
+      (\z : Ref (Nat -> Nat), 
+        (\y : Ref (Nat -> Nat),
+          (z := (\x: Nat, (!y) x)) ;
+          y := (\x: Nat, (!z) x)
+        )
+      )(ref (\x: Nat, x))
+    )(ref (\x: Nat, x))
+  }>.
+  simpl. eapply multi_step.
+  {
+    apply ST_App1.
+    apply ST_App2.
+    - constructor.
+    - apply ST_RefValue.
+      constructor.
+  }
+  simpl. eapply multi_step.
+  {
+    apply ST_App1.
+    apply ST_AppAbs.
+    constructor.
+  }
+  simpl. eapply multi_step.
+  {
+    apply ST_App2.
+    - constructor.
+    - apply ST_RefValue.
+      constructor.
+  }
+  simpl. eapply multi_step.
+  {
+    apply ST_AppAbs.
+    constructor.
+  }
+  simpl. eapply multi_step.
+  {
+    apply ST_Assign1.
+    apply ST_App2.
+    - constructor.
+    - apply ST_Assign.
+      + constructor.
+      + simpl. auto.
+  }
+  simpl. eapply multi_step.
+  {
+    apply ST_Assign1.
+    apply ST_AppAbs.
+    constructor.
+  }
+  simpl. eapply multi_step.
+  {
+    apply ST_Assign.
+    - constructor.
+    - simpl. auto.
+  }
+  simpl. apply multi_refl.
+  Qed.
 (** [] *)
 
 (** These problems arise from the fact that our proposed
@@ -1271,15 +1355,53 @@ Definition store_well_typed (ST:store_ty) (st:store) :=
     different store typings [ST1] and [ST2] such that both
     [ST1 |-- st] and [ST2 |-- st]? *)
 
-(* FILL IN HERE *)
-
 Theorem store_not_unique:
   exists st, exists ST1, exists ST2,
     store_well_typed ST1 st /\
     store_well_typed ST2 st /\
     ST1 <> ST2.
 Proof.
-  (* FILL IN HERE *) Admitted.
+  exists 
+    (<{ \x:Nat, (!(loc 1)) x }> :: <{ \x:Nat, (!(loc 0)) x }> :: nil), 
+    (<{ Nat -> Nat }> :: <{ Nat -> Nat }> :: nil), 
+    (<{ Nat -> Nat -> Nat }> :: <{ Nat -> Nat -> Nat }> :: nil).
+  split; [| split]; try (split; simpl; try reflexivity).
+  {
+    intros. inversion H; clear H; subst;
+    unfold store_lookup; simpl.
+    + apply T_Abs.
+      apply T_App with (T2 := <{ Nat }>).
+      * apply T_Deref.
+        apply T_Loc.
+        simpl. auto.
+      * auto.
+    + inversion H1; clear H1; subst; try solve_by_invert.
+      apply T_Abs.
+      apply T_App with (T2 := <{ Nat }>).
+      * apply T_Deref.
+        apply T_Loc.
+        simpl. auto.
+      * auto.
+  }
+  {
+    intros. inversion H; clear H; subst;
+    unfold store_lookup, store_Tlookup; simpl.
+    + apply T_Abs.
+      apply T_App with (T2 := <{ Nat }>).
+      * apply T_Deref.
+        apply T_Loc.
+        simpl. auto.
+      * auto.
+    + inversion H1; clear H1; subst; try solve_by_invert.
+      apply T_Abs.
+      apply T_App with (T2 := <{ Nat }>).
+      * apply T_Deref.
+        apply T_Loc.
+        simpl. auto.
+      * auto.
+  }
+  unfold not. intros. inversion H.
+  Qed.
 (** [] *)
 
 (** We can now state something closer to the desired preservation
@@ -1913,24 +2035,46 @@ Qed.
     sure it gives the correct result when applied to the argument
     [4].) *)
 
-Definition factorial : tm
-  (* REPLACE THIS LINE WITH ":= _your_definition_ ." *). Admitted.
+Definition factorial : tm :=
+  <{
+    (\y : Nat,
+      (\r : Ref (Nat -> Nat),
+        (r := (\x : Nat,
+            if0 x
+              then 1
+              else x * ((! r) (pred x))
+          )
+        ) ; ((! r) y)
+      ) (ref (\x: Nat, 0))
+    )
+  }>.
 
 Lemma factorial_type : empty; nil |-- factorial \in (Nat -> Nat).
 Proof with eauto.
-  (* FILL IN HERE *) Admitted.
+  unfold factorial.
+  apply T_Abs. eapply T_App...
+  apply T_Abs. unfold tseq. eapply T_App.
+  - apply T_Abs. apply T_App with (T2 := <{ Nat }>).
+    apply T_Deref...
+    constructor...
+  - eapply T_Assign...
+    apply T_Abs. apply T_If0...
+    apply T_Mult...
+    eapply T_App...
+    apply T_Deref...
+  Qed.
 
 (** If your definition is correct, you should be able to just
     uncomment the example below; the proof should be fully
     automatic using the [reduce] tactic. *)
 
-(* 
+
 Lemma factorial_4 : exists st,
   <{ factorial 4 }> / nil -->* tm_const 24 / st.
 Proof.
   eexists. unfold factorial. reduce.
 Qed.
-*)
+
 (** [] *)
 
 (* ################################################################# *)
